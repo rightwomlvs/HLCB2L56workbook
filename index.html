@@ -293,6 +293,12 @@
             transform: scale(1.05);
         }
 
+        .tts-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         /* Options */
         .options-grid {
             display: grid;
@@ -416,14 +422,15 @@
 
     <script>
         // ==========================================
-        // 語音引擎：使用原生 speechSynthesis (同步呼叫避免 iframe 阻擋)
+        // 語音引擎：Google Translate TTS 串接
+        // (完美繞過 iframe 與 Autoplay 限制，只唸英文)
         // ==========================================
-        window.currentUtterance = null;
+        let currentAudio = null;
 
         function speakText(text, btnElement) {
             if (!text) return;
 
-            // 1. 濾除中文、標點符號、等特殊標籤，只保留純英文發音 (修復了此處正則表示式)
+            // 1. 濾除中文、標點符號與特殊標籤，只保留純英文發音
             let cleanText = text.replace(/[\u4e00-\u9fa5]/g, '') 
                               .replace(/[。，、？！；：]/g, ' ') 
                               .replace(/^\d+\.\s*/, '') 
@@ -436,35 +443,46 @@
             if (!cleanText) return;
 
             const originalText = btnElement.innerHTML;
-            btnElement.innerHTML = "🔊...";
-            btnElement.style.opacity = "0.6";
+            btnElement.innerHTML = "⏳";
+            btnElement.disabled = true;
 
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                let utterance = new SpeechSynthesisUtterance(cleanText);
-                utterance.lang = 'en-US';
-                utterance.rate = 0.9;
-                
-                utterance.onend = () => {
-                    btnElement.innerHTML = originalText;
-                    btnElement.style.opacity = "1";
-                };
-                utterance.onerror = () => {
-                    btnElement.innerHTML = originalText;
-                    btnElement.style.opacity = "1";
-                };
-
-                window.currentUtterance = utterance; // 防止 Chrome GC
-                window.speechSynthesis.speak(utterance);
-            } else {
-                alert("您的瀏覽器不支援語音朗讀功能。");
-                btnElement.innerHTML = originalText;
-                btnElement.style.opacity = "1";
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio = null;
             }
+
+            // 2. 切割文字：因 TTS URL 長度限制，以大約 150 字元為單位進行斷句
+            let chunks = cleanText.match(/.{1,150}(\s|$)|\S+?(\s|$)/g) || [cleanText];
+            let urls = chunks.map(chunk => `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=en-US&q=${encodeURIComponent(chunk.trim())}`);
+            
+            // 3. 序列播放函式
+            function playSequence() {
+                if (urls.length === 0) {
+                    btnElement.innerHTML = originalText;
+                    btnElement.disabled = false;
+                    return;
+                }
+                currentAudio = new Audio(urls.shift());
+                currentAudio.onended = playSequence;
+                currentAudio.onerror = () => {
+                    console.warn("Audio chunk failed, trying next.");
+                    playSequence();
+                };
+                currentAudio.play().catch(e => {
+                    console.warn("Autoplay prevented or network error.", e);
+                    btnElement.innerHTML = "❌";
+                    setTimeout(() => { 
+                        btnElement.innerHTML = originalText; 
+                        btnElement.disabled = false; 
+                    }, 1500);
+                });
+            }
+
+            playSequence();
         }
 
         // ==========================================
-        // 題庫資料 (L5 & L6 習作)
+        // 題庫資料 (L5 & L6 習作，修復遺漏的 Context)
         // ==========================================
         const contexts = {
             'cloze_l05_1': { 
@@ -472,6 +490,12 @@
                 title: '綜合測驗 (1)', 
                 en: `In the past, few people thought tribal culture could be a part of fashion. However, in <span class="highlight-blank" id="cloze-l5-1">1</span> years, traditional patterns from Taiwan's indigenous tribes have gained more attention. In 2017, Paiwan designer Sabra Andre <span class="highlight-blank" id="cloze-l5-2">2</span> people at Vancouver Fashion Week. His designs were inspired by the "hundred pacer" snake, a symbol of his tribe. His work helped <span class="highlight-blank" id="cloze-l5-3">3</span> into the fashion industry as well. <span class="highlight-blank" id="cloze-l5-4">4</span>, other designers joined in. At Taipei Fashion Week, they used Atayal diamond patterns and <span class="highlight-blank" id="cloze-l5-5">5</span>. These designs tell old stories and allow people to learn about indigenous cultures in a "fashionable" way.`, 
                 zh: `在過去，很少人認為部落文化可以成為時尚的一部分。然而，近年來，台灣原住民族的傳統圖騰獲得了更多關注。2017年，排灣族設計師 Sabra Andre 在溫哥華時裝週上驚豔了眾人。他的設計靈感來自於百步蛇，這是他部落的象徵。他的作品也幫助為時尚產業注入了新生命。後來，其他設計師也加入了。在臺北時裝週上，他們使用了泰雅族的菱形圖騰與條紋。這些設計訴說著古老的故事，並讓人們以「時尚」的方式了解原住民文化。` 
+            },
+            'cloze_l05_2': {
+                lesson: 'L5',
+                title: '綜合測驗 (2)',
+                en: `Many designers today are using tribal patterns in their work. <span class="highlight-blank" id="cloze-l5-6">6</span>, designers at Taipei Fashion Week once showed a series of clothes with native patterns from the Atayal. In Atayal culture, a diamond pattern means the eyes of their <span class="highlight-blank" id="cloze-l5-7">7</span>, and stripes are the path to the "Rainbow Bridge". These patterns are <span class="highlight-blank" id="cloze-l5-8">8</span> important cultural elements that they have been passed down for centuries. Now, they are also a part of modern clothing. Designers are <span class="highlight-blank" id="cloze-l5-9">9</span> tribal tradition. Their work shows <span class="highlight-blank" id="cloze-l5-10">10</span> every part of our society can sometimes come under the spotlight. No one culture should be regarded as superior to another.`,
+                zh: `如今許多設計師在他們的作品中使用部落圖騰。例如，臺北時裝週的設計師們曾經展示了一系列帶有泰雅族原住民圖騰的服裝。在泰雅族文化中，菱形圖紋代表祖靈的眼睛，而條紋則是通往「彩虹橋」的道路。這些圖騰是如此重要的文化元素，以至於它們已經傳承了幾個世紀。現在，它們也是現代服飾的一部分。設計師們正在從部落傳統中汲取靈感。他們的作品顯示，我們社會的每一個部分有時都能成為鎂光燈下的焦點。沒有任何一種文化應該被認為優於另一種文化。`
             },
             'reading_l05_1': {
                 lesson: 'L5',
@@ -499,9 +523,15 @@
             },
             'cloze_l06_1': {
                 lesson: 'L6',
-                title: '綜合測驗',
+                title: '綜合測驗 (1)',
                 en: `Many high school students take jobs to earn money and gain experience during summer vacation. If you plan to do so, you should <span class="highlight-blank" id="cloze-l6-1">1</span> when a job advertisement sounds perfect. Some jobs look good at first, but you may be asked to pay a fee before you start working. Other employers may ask you to <span class="highlight-blank" id="cloze-l6-2">2</span> from unknown accounts. Therefore, <span class="highlight-blank" id="cloze-l6-3">3</span> that safety comes first when you are going for interviews. <span class="highlight-blank" id="cloze-l6-4">4</span>, you should tell your parents where you are going or ask a friend to come along. <span class="highlight-blank" id="cloze-l6-5">5</span> is important for you to check everything carefully before saying yes. After all, if a job looks too good to be true, it probably is.`,
                 zh: `許多高中生在暑假期間打工賺錢並獲取經驗。如果你計畫這麼做，當徵才廣告聽起來很完美時，你應該要當心。有些工作一開始看起來不錯，但你可能會被要求在開始工作前支付一筆費用。其他雇主可能會要求你從未知的帳戶中提款。因此，去面試時要牢記安全第一。例如，你應該告訴父母你要去哪裡，或者找朋友一起去。在答應之前仔細檢查一切對你來說很重要。畢竟，如果一份工作看起來好得令人難以置信，那它可能真的有問題。`
+            },
+            'cloze_l06_2': {
+                lesson: 'L6',
+                title: '綜合測驗 (2)',
+                en: `These days, scamming cases are often reported in the news. In addition to adults, many teens fall <span class="highlight-blank" id="cloze-l6-6">6</span> to job scams. The police warn young people to <span class="highlight-blank" id="cloze-l6-7">7</span>. Here are some dos and don'ts to keep in mind. First, if a job sounds <span class="highlight-blank" id="cloze-l6-8">8</span>, it can be a trap. Checking the company details can help you stay out of danger. <span class="highlight-blank" id="cloze-l6-9">9</span>, it is safer for teenagers to share job details with their parents and get their advice. Besides, don't give your ID or ATM card to strangers. Finally, there are phone lines and websites <span class="highlight-blank" id="cloze-l6-10">10</span> by the government. Everyone can get advice and help from them anytime.`,
+                zh: `如今，詐騙案件經常在新聞中被報導。除了成年人之外，許多青少年也成為工作詐騙的受害者。警方警告年輕人要小心虛假的工作。這裡有一些應該做和不應該做的事要牢記。首先，如果一份工作聽起來好得令人難以置信，它可能是一個陷阱。檢查公司詳細資料可以幫助您遠離危險。此外，對青少年來說，與父母分享工作細節並聽取他們的建議會更安全。另外，不要把您的身分證或提款卡給陌生人。最後，政府提供了專線和網站。每個人都可以隨時從那裡獲得建議和幫助。`
             },
             'reading_l06_1': {
                 lesson: 'L6',
@@ -564,7 +594,7 @@
             { lesson: 'L5', section: 'cloze', type: 'mc', contextId: 'cloze_l05_1', q: '3. His work helped _____ into the fashion industry as well.', options: ['(A) breathe new life', '(B) place importance', '(C) keep an eye', '(D) pay attention'], ans: 0, exp: { clue: '他的作品幫助為時尚產業「注入新生命 (breathe new life)」。', words: 'breathe new life into (為...注入新生命)', grammar: 'help (to) + V。', trans: '他的作品也幫助為時尚產業注入了新生命。' } },
             { lesson: 'L5', section: 'cloze', type: 'mc', contextId: 'cloze_l05_1', q: '4. _____, other designers joined in.', options: ['(A) Once more', '(B) In general', '(C) Later', '(D) Earlier'], ans: 2, exp: { clue: 'Sabra Andre 引起關注，「後來 (Later)」，其他設計師也加入了。', words: 'later (adv. 後來) / join in (加入)', grammar: '時間副詞轉折。', trans: '後來，其他設計師也加入了。' } },
             { lesson: 'L5', section: 'cloze', type: 'mc', contextId: 'cloze_l05_1', q: '5. At Taipei Fashion Week, they used Atayal diamond patterns and _____.', options: ['(A) ancestors', '(B) stripes', '(C) operas', '(D) doubts'], ans: 1, exp: { clue: '與菱形圖騰 (patterns) 平行對等的應是另一種花樣「條紋 (stripes)」。', words: 'stripe (n. 條紋) / diamond (n. 菱形)', grammar: '對等連接詞 and 連接名詞。', trans: '在臺北時裝週上，他們使用了泰雅族的菱形圖騰與條紋。' } },
-            { lesson: 'L5', section: 'cloze', type: 'mc', contextId: 'cloze_l05_2', q: '6. _____, designers at Taipei Fashion Week once showed a series of clothes with native patterns...', options: ['(A) Instead', '(B) However', '(C) For example', '(D) In other words'], ans: 2, exp: { clue: '前句說許多設計師使用部落圖騰，此句舉「臺北時裝週」為例，故選 For example。', words: 'For example (例如) / native (adj. 原住民的)', grammar: '轉折副詞片語。', trans: '例如，臺北時裝週的設計師們曾經展示了一系列帶有泰雅族原住民圖騰的服裝。' } },
+            { lesson: 'L5', section: 'cloze', type: 'mc', contextId: 'cloze_l05_2', q: '6. _____, designers at Taipei Fashion Week once showed a series of clothes with native patterns...', options: ['(A) Instead', '(B) However', '(C) For example', '(D) In other words'], ans: 2, exp: { clue: '前句說設計師使用部落圖騰，此句舉「臺北時裝週」為例，故選 For example。', words: 'For example (例如) / native (adj. 原住民的)', grammar: '轉折副詞片語。', trans: '例如，臺北時裝週的設計師們曾經展示了一系列帶有泰雅族原住民圖騰的服裝。' } },
             { lesson: 'L5', section: 'cloze', type: 'mc', contextId: 'cloze_l05_2', q: '7. In Atayal culture, a diamond pattern means the eyes of their _____,', options: ['(A) reviews', '(B) spotlights', '(C) ancestors', '(D) factors'], ans: 2, exp: { clue: '在泰雅族文化中，菱形圖紋代表「祖靈/祖先 (ancestors)」的眼睛。', words: 'ancestor (n. 祖先) / diamond pattern (菱形圖紋)', grammar: '名詞。', trans: '在泰雅族文化中，菱形圖紋代表祖靈的眼睛。' } },
             { lesson: 'L5', section: 'cloze', type: 'mc', contextId: 'cloze_l05_2', q: '8. These patterns are _____ important cultural elements that they have been passed down for centuries.', options: ['(A) as ... as', '(B) so ... that', '(C) more ... than', '(D) such ... that'], ans: 3, exp: { clue: '修飾複數名詞片語 important cultural elements，並搭配後方的 that，必須使用 such。', words: 'pass down (傳承)', grammar: 'such + adj. + 複數名詞 + that + 子句。', trans: '這些圖騰是如此重要的文化元素，以至於它們已經傳承了幾個世紀。' } },
             { lesson: 'L5', section: 'cloze', type: 'mc', contextId: 'cloze_l05_2', q: '9. Designers are _____ tribal tradition.', options: ['(A) turning into', '(B) drawing inspiration from', '(C) having trouble with', '(D) checking on'], ans: 1, exp: { clue: '設計師從部落傳統中「汲取靈感 (drawing inspiration from)」。', words: 'draw inspiration from (從...汲取靈感) / tradition (n. 傳統)', grammar: '現在進行式 are + V-ing。', trans: '設計師們正在從部落傳統中汲取靈感。' } },
@@ -621,7 +651,7 @@
             { lesson: 'L6', section: 'cloze', type: 'mc', contextId: 'cloze_l06_2', q: '7. The police warn young people to _____.', options: ['(A) watch out for fake jobs', '(B) work flexible hours', '(C) call the police', '(D) use ATM cards'], ans: 0, exp: { clue: '詐騙案件頻傳，警方警告年輕人要「小心虛假工作」。', words: 'watch out for (小心；提防) / fake (adj. 假的)', grammar: 'warn sb. to V (警告某人做...)。', trans: '警方警告年輕人要小心虛假的工作。' } },
             { lesson: 'L6', section: 'cloze', type: 'mc', contextId: 'cloze_l06_2', q: '8. First, if a job sounds _____, it can be a trap.', options: ['(A) too bad to be real', '(B) too true to be good', '(C) too good to be true', '(D) too easy to be fun'], ans: 2, exp: { clue: '若工作聽起來「太好以至於不可能是真的」，就可能是陷阱。慣用語為 too good to be true。', words: 'trap (n. 陷阱)', grammar: 'too + adj. + to V (太...而不能...)。', trans: '首先，如果一份工作聽起來好得令人難以置信，它可能是一個陷阱。' } },
             { lesson: 'L6', section: 'cloze', type: 'mc', contextId: 'cloze_l06_2', q: '9. _____, it is safer for teenagers to share job details with their parents...', options: ['(A) Instead', '(B) For short', '(C) What\'s more', '(D) For instance'], ans: 2, exp: { clue: '補充另一個好方法，故填入 What\'s more (此外；而且) 表遞進。', words: 'What\'s more (此外)', grammar: '轉折副詞。', trans: '此外，對青少年來說，與父母分享工作細節並聽取他們的建議會更安全。' } },
-            { lesson: 'L6', section: 'cloze', type: 'mc', contextId: 'cloze_l06_2', q: '10. Finally, there are phone lines and websites _____ by the government.', options: ['(A) provide', '(B) provided', '(C) providing', '(D) to provide'], ans: 1, exp: { clue: '網站和專線是被政府「提供」的，用過去分詞修飾前面的名詞。', words: 'provide (v. 提供)', grammar: '過去分詞片語作形容詞修飾名詞。', trans: '最後，政府提供了由政府專線和網站。' } },
+            { lesson: 'L6', section: 'cloze', type: 'mc', contextId: 'cloze_l06_2', q: '10. Finally, there are phone lines and websites _____ by the government.', options: ['(A) provide', '(B) provided', '(C) providing', '(D) to provide'], ans: 1, exp: { clue: '網站和專線是被政府「提供」的，用過去分詞修飾前面的名詞。', words: 'provide (v. 提供)', grammar: '過去分詞片語作形容詞修飾名詞。', trans: '最後，政府提供了專線和網站。' } },
 
             // Dialogue (L6)
             { lesson: 'L6', section: 'dialogue', type: 'mc', q: '1. Sophie: My boyfriend\'s mom is in the hospital, and he wants me to lend him some money.<br>Eric: That sounds serious... but _____<br>Sophie: Yes. He even sent me some photos of his mom.<br>Eric: You should be careful. Maybe visit the hospital yourself first.', options: ['(A) you\'ll feel much better today.', '(B) are you sure he\'s telling the truth?', '(C) he might not get better.', '(D) are you calling the police?'], ans: 1, exp: { clue: 'Eric 要 Sophie 小心，因此推斷 Eric 中間是質疑男方：「你確定他說的是實話嗎？(are you sure he\'s telling the truth?)」。', words: 'serious (adj. 嚴重的) / lend (v. 借出)', grammar: 'be sure + (that) 子句。', trans: 'Eric: 那聽起來很嚴重...但你確定他說的是實話嗎？' } },
@@ -644,8 +674,6 @@
             { lesson: 'L6', section: 'writing', type: 'input', q: '5. 改寫句子 (用虛主詞 It 改寫)：<br>Tracking their spending is important for people who want to save money.', ans: ['It is important for people who want to save money to track their spending.'], exp: { clue: '虛主詞 It 放句首代替 Tracking...。', words: 'track (v. 追蹤) / spending (n. 花費)', grammar: 'It is + adj. + for sb. + to V。', trans: '對想存錢的人來說，追蹤他們的花費是很重要的。' } },
             { lesson: 'L6', section: 'writing', type: 'input', q: '6. 中譯英：有一名新的教練被聘僱來訓練籃球校隊。', ans: ['There is a new coach hired to train the school basketball team.'], exp: { clue: '有一名... (There is...)，被聘僱用過去分詞 hired 作形容詞。', words: 'coach (n. 教練) / hire (v. 聘僱)', grammar: 'There is + N + V.p.p (被...)。', trans: '有一名新的教練被聘僱來訓練籃球校隊。' } }
         ];
-
-        let currentLesson = 'L5';
 
         function renderApp() {
             const container = document.getElementById('app-content');
@@ -671,7 +699,7 @@
                             <div class="context-title">
                                 ${ctx.title}
                                 <div class="context-actions">
-                                    <button class="btn-action tts-read-ctx" data-ctx="${currentContext}">🔊 朗讀英文</button>
+                                    <button class="btn-action tts-read-ctx" data-ctx="${currentContext}">🔊 朗讀</button>
                                     <button class="btn-action toggle-trans" data-ctx="${currentContext}">👁️ 翻譯</button>
                                 </div>
                             </div>

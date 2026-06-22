@@ -422,10 +422,11 @@
 
     <script>
         // ==========================================
-        // 語音引擎：Google Translate TTS 串接
-        // (完美繞過 iframe 與 Autoplay 限制，只唸英文)
+        // 語音引擎：GitHub Pages 專用的 Native Web Speech API
+        // 解決 CORS 阻擋問題，且保證在所有標準瀏覽器正常發聲
         // ==========================================
-        let currentAudio = null;
+        let synth = window.speechSynthesis;
+        window.currentUtterance = null; // 放在全域，防止被垃圾回收(GC)中斷
 
         function speakText(text, btnElement) {
             if (!text) return;
@@ -443,46 +444,35 @@
             if (!cleanText) return;
 
             const originalText = btnElement.innerHTML;
-            btnElement.innerHTML = "⏳";
-            btnElement.disabled = true;
+            btnElement.innerHTML = "🔊...";
+            btnElement.style.opacity = "0.6";
 
-            if (currentAudio) {
-                currentAudio.pause();
-                currentAudio = null;
+            // 確保停止前一個語音
+            if (synth.speaking) {
+                synth.cancel();
             }
 
-            // 2. 切割文字：因 TTS URL 長度限制，以大約 150 字元為單位進行斷句
-            let chunks = cleanText.match(/.{1,150}(\s|$)|\S+?(\s|$)/g) || [cleanText];
-            let urls = chunks.map(chunk => `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=en-US&q=${encodeURIComponent(chunk.trim())}`);
+            let utterance = new SpeechSynthesisUtterance(cleanText);
+            utterance.lang = 'en-US';
+            utterance.rate = 0.9;
             
-            // 3. 序列播放函式
-            function playSequence() {
-                if (urls.length === 0) {
-                    btnElement.innerHTML = originalText;
-                    btnElement.disabled = false;
-                    return;
-                }
-                currentAudio = new Audio(urls.shift());
-                currentAudio.onended = playSequence;
-                currentAudio.onerror = () => {
-                    console.warn("Audio chunk failed, trying next.");
-                    playSequence();
-                };
-                currentAudio.play().catch(e => {
-                    console.warn("Autoplay prevented or network error.", e);
-                    btnElement.innerHTML = "❌";
-                    setTimeout(() => { 
-                        btnElement.innerHTML = originalText; 
-                        btnElement.disabled = false; 
-                    }, 1500);
-                });
-            }
+            // 事件監聽，語音結束後恢復按鈕狀態
+            utterance.onend = () => {
+                btnElement.innerHTML = originalText;
+                btnElement.style.opacity = "1";
+            };
+            utterance.onerror = (e) => {
+                console.error("Speech error:", e);
+                btnElement.innerHTML = originalText;
+                btnElement.style.opacity = "1";
+            };
 
-            playSequence();
+            window.currentUtterance = utterance; 
+            synth.speak(utterance);
         }
 
         // ==========================================
-        // 題庫資料 (L5 & L6 習作，修復遺漏的 Context)
+        // 題庫資料 (L5 & L6 習作)
         // ==========================================
         const contexts = {
             'cloze_l05_1': { 
@@ -675,6 +665,8 @@
             { lesson: 'L6', section: 'writing', type: 'input', q: '6. 中譯英：有一名新的教練被聘僱來訓練籃球校隊。', ans: ['There is a new coach hired to train the school basketball team.'], exp: { clue: '有一名... (There is...)，被聘僱用過去分詞 hired 作形容詞。', words: 'coach (n. 教練) / hire (v. 聘僱)', grammar: 'There is + N + V.p.p (被...)。', trans: '有一名新的教練被聘僱來訓練籃球校隊。' } }
         ];
 
+        let currentLesson = 'L5';
+
         function renderApp() {
             const container = document.getElementById('app-content');
             container.innerHTML = ''; 
@@ -699,7 +691,7 @@
                             <div class="context-title">
                                 ${ctx.title}
                                 <div class="context-actions">
-                                    <button class="btn-action tts-read-ctx" data-ctx="${currentContext}">🔊 朗讀</button>
+                                    <button class="btn-action tts-read-ctx" data-ctx="${currentContext}">🔊 朗讀英文</button>
                                     <button class="btn-action toggle-trans" data-ctx="${currentContext}">👁️ 翻譯</button>
                                 </div>
                             </div>
